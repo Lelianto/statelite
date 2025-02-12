@@ -1,5 +1,5 @@
 {
-  "name": "statelite",
+  "name": "@antihero/statelite",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
