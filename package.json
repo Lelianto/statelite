@@ -1,18 +1,22 @@
 {
   "name": "@antihero/statelite",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "1.0.1",
+  "description": "A simple TypeScript-based state management solution with middleware support and persistence functionality.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "jest"
+    "test": "jest",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "state",
     "state-management",
     "typescript",
     "middleware",
-    "persistence"
+    "persistence",
+    "lightweight",
+    "store"
   ],
   "author": "antihero",
   "license": "MIT",
@@ -23,5 +27,18 @@
     "jest-environment-jsdom": "^29.7.0",
     "ts-jest": "^29.2.5",
     "typescript": "^5.7.3"
-  }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lelianto/statelite.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Lelianto/statelite/issues"
+  },
+  "homepage": "https://github.com/Lelianto/statelite#readme"
 }
