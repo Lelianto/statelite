@@ -1,3 +1,5 @@
+import Cookies from 'js-cookie';
+
 type Listener<T> = (state: T) => void;
 
 export const createStatelite = <T extends object>(
@@ -10,7 +12,7 @@ export const createStatelite = <T extends object>(
 	// Store for client-side only
 	let isClient = false;
 
-	// Delay localStorage access until after the component is mounted in client-side
+	// Delay cookie access until after the component is mounted in client-side
 	if (typeof window !== 'undefined') {
 		isClient = true; // Ensure we're on the client-side
 	}
@@ -26,16 +28,17 @@ export const createStatelite = <T extends object>(
 		state = { ...state, ...nextState };
 		listeners.forEach((listener) => listener(state));
 
-		// Persist the state to localStorage (only on the client side)
+		// Persist the state to cookies (only on the client side)
 		if (isClient && options?.persistKey) {
 			if (JSON.stringify(previousState) !== JSON.stringify(state)) {
-				localStorage.setItem(options.persistKey, JSON.stringify(state));
+				// Store state in cookies instead of localStorage
+				Cookies.set(options.persistKey, JSON.stringify(state), { expires: 7 });
 			}
 		}
 
 		// Remove the persisted state if it resets to initial state (on client side)
 		if (isClient && JSON.stringify(state) === JSON.stringify(initialState) && options?.persistKey) {
-			localStorage.removeItem(options.persistKey);
+			Cookies.remove(options.persistKey);
 		}
 	};
 
@@ -51,9 +54,9 @@ export const createStatelite = <T extends object>(
 	// Selector function for partial state updates
 	const select = <K>(selector: (state: T) => K): K => selector(state);
 
-	// Load persisted state from localStorage (client-side only)
+	// Load persisted state from cookies (client-side only)
 	if (isClient && options?.persistKey) {
-		const persistedState = localStorage.getItem(options.persistKey);
+		const persistedState = Cookies.get(options.persistKey);
 		if (persistedState) {
 			state = { ...state, ...JSON.parse(persistedState) };
 		}

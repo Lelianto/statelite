@@ -1,12 +1,16 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createStatelite = void 0;
+const js_cookie_1 = __importDefault(require("js-cookie"));
 const createStatelite = (initialState, options) => {
     let state = initialState;
     const listeners = [];
     // Store for client-side only
     let isClient = false;
-    // Delay localStorage access until after the component is mounted in client-side
+    // Delay cookie access until after the component is mounted in client-side
     if (typeof window !== 'undefined') {
         isClient = true; // Ensure we're on the client-side
     }
@@ -18,15 +22,16 @@ const createStatelite = (initialState, options) => {
         const previousState = Object.assign({}, state);
         state = Object.assign(Object.assign({}, state), nextState);
         listeners.forEach((listener) => listener(state));
-        // Persist the state to localStorage (only on the client side)
+        // Persist the state to cookies (only on the client side)
         if (isClient && (options === null || options === void 0 ? void 0 : options.persistKey)) {
             if (JSON.stringify(previousState) !== JSON.stringify(state)) {
-                localStorage.setItem(options.persistKey, JSON.stringify(state));
+                // Store state in cookies instead of localStorage
+                js_cookie_1.default.set(options.persistKey, JSON.stringify(state), { expires: 7 });
             }
         }
         // Remove the persisted state if it resets to initial state (on client side)
         if (isClient && JSON.stringify(state) === JSON.stringify(initialState) && (options === null || options === void 0 ? void 0 : options.persistKey)) {
-            localStorage.removeItem(options.persistKey);
+            js_cookie_1.default.remove(options.persistKey);
         }
     };
     // Subscribe to state changes
@@ -40,9 +45,9 @@ const createStatelite = (initialState, options) => {
     };
     // Selector function for partial state updates
     const select = (selector) => selector(state);
-    // Load persisted state from localStorage (client-side only)
+    // Load persisted state from cookies (client-side only)
     if (isClient && (options === null || options === void 0 ? void 0 : options.persistKey)) {
-        const persistedState = localStorage.getItem(options.persistKey);
+        const persistedState = js_cookie_1.default.get(options.persistKey);
         if (persistedState) {
             state = Object.assign(Object.assign({}, state), JSON.parse(persistedState));
         }
