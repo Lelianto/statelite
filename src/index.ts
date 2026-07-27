@@ -1,66 +1,190 @@
-import Cookies from 'js-cookie';
+export type StateUpdater<T extends object> =
+	| T
+	| Partial<T>
+	| ((previousState: Readonly<T>) => T | Partial<T>);
 
-type Listener<T> = (state: T) => void;
+export interface SetStateOptions {
+	replace?: boolean;
+	action?: string;
+}
 
-export const createStatelite = <T extends object>(
-	initialState: T,
-	options?: { persistKey?: string }
-) => {
-	let state = initialState;
-	const listeners: Listener<T>[] = [];
+export interface SubscribeOptions<U> {
+	equality?: (left: U, right: U) => boolean;
+	fireImmediately?: boolean;
+}
 
-	// Store for client-side only
-	let isClient = false;
+export type StateListener<T> = (
+	state: Readonly<T>,
+	previousState: Readonly<T>,
+	action?: string
+) => void;
 
-	// Delay cookie access until after the component is mounted in client-side
-	if (typeof window !== 'undefined') {
-		isClient = true; // Ensure we're on the client-side
-	}
+export interface StateliteStore<T extends object> {
+	getState(): Readonly<T>;
+	getInitialState(): Readonly<T>;
+	setState(update: StateUpdater<T>, options?: SetStateOptions | boolean): void;
+	reset(action?: string): void;
+	subscribe(listener: StateListener<T>): () => void;
+	subscribe<U>(
+		selector: (state: Readonly<T>) => U,
+		listener: (slice: U, previousSlice: U, action?: string) => void,
+		options?: SubscribeOptions<U>
+	): () => void;
+	select<U>(selector: (state: Readonly<T>) => U): U;
+	destroy(): void;
+}
 
-	// Function to get the current state
-	const getState = (): T => state;
+const shallowEqual = (left: object, right: object): boolean => {
+	if (Object.is(left, right)) return true;
 
-	// Function to set/update the state
-	const setState = (updater: Partial<T> | ((prevState: T) => Partial<T>)) => {
-		const nextState = typeof updater === 'function' ? updater(state) : updater;
-		const previousState = { ...state };
+	const leftKeys = Object.keys(left);
+	const rightKeys = Object.keys(right);
+	if (leftKeys.length !== rightKeys.length) return false;
 
-		state = { ...state, ...nextState };
-		listeners.forEach((listener) => listener(state));
-
-		// Persist the state to cookies (only on the client side)
-		if (isClient && options?.persistKey) {
-			if (JSON.stringify(previousState) !== JSON.stringify(state)) {
-				// Store state in cookies instead of localStorage
-				Cookies.set(options.persistKey, JSON.stringify(state), { expires: 7 });
-			}
-		}
-
-		// Remove the persisted state if it resets to initial state (on client side)
-		if (isClient && JSON.stringify(state) === JSON.stringify(initialState) && options?.persistKey) {
-			Cookies.remove(options.persistKey);
-		}
-	};
-
-	// Subscribe to state changes
-	const subscribe = (listener: Listener<T>) => {
-		listeners.push(listener);
-		return () => {
-			const index = listeners.indexOf(listener);
-			if (index !== -1) listeners.splice(index, 1);
-		};
-	};
-
-	// Selector function for partial state updates
-	const select = <K>(selector: (state: T) => K): K => selector(state);
-
-	// Load persisted state from cookies (client-side only)
-	if (isClient && options?.persistKey) {
-		const persistedState = Cookies.get(options.persistKey);
-		if (persistedState) {
-			state = { ...state, ...JSON.parse(persistedState) };
-		}
-	}
-
-	return { getState, setState, subscribe, select };
+	return leftKeys.every(
+		(key) =>
+			Object.prototype.hasOwnProperty.call(right, key) &&
+			Object.is(
+				(left as Record<string, unknown>)[key],
+				(right as Record<string, unknown>)[key]
+			)
+	);
 };
+
+const cloneState = <T extends object>(state: T): T => {
+	if (Array.isArray(state)) return [...state] as T;
+	return { ...state };
+};
+
+/**
+ * Creates a small external store that is independent from UI frameworks and
+ * browser APIs.
+ */
+export const createStatelite = <T extends object>(
+	initialState: T
+): StateliteStore<T> => {
+	const initialSnapshot = cloneState(initialState);
+	let state = cloneState(initialState);
+	let destroyed = false;
+	const listeners = new Set<StateListener<T>>();
+
+	const getState = (): Readonly<T> => state;
+	const getInitialState = (): Readonly<T> => initialSnapshot;
+
+	const setState = (
+		update: StateUpdater<T>,
+		options: SetStateOptions | boolean = {}
+	): void => {
+		if (destroyed) return;
+
+		const resolvedOptions =
+			typeof options === 'boolean' ? { replace: options } : options;
+		const previousState = state;
+		const nextValue =
+			typeof update === 'function'
+				? update(previousState)
+				: update;
+		const shouldReplace =
+			resolvedOptions.replace === true || Array.isArray(previousState);
+		const nextState = (
+			shouldReplace
+				? nextValue
+				: { ...previousState, ...nextValue }
+		) as T;
+
+		if (
+			Object.is(previousState, nextState) ||
+			(!Array.isArray(nextState) && shallowEqual(previousState, nextState))
+		) {
+			return;
+		}
+
+		state = nextState;
+		for (const listener of Array.from(listeners)) {
+			listener(state, previousState, resolvedOptions.action);
+		}
+	};
+
+	const reset = (action = 'reset'): void => {
+		setState(cloneState(initialSnapshot), { replace: true, action });
+	};
+
+	function subscribe(listener: StateListener<T>): () => void;
+	function subscribe<U>(
+		selector: (currentState: Readonly<T>) => U,
+		listener: (slice: U, previousSlice: U, action?: string) => void,
+		options?: SubscribeOptions<U>
+	): () => void;
+	function subscribe<U>(
+		selectorOrListener: StateListener<T> | ((currentState: Readonly<T>) => U),
+		sliceListener?: (
+			slice: U,
+			previousSlice: U,
+			action?: string
+		) => void,
+		options: SubscribeOptions<U> = {}
+	): () => void {
+		if (destroyed) return () => undefined;
+
+		let listener: StateListener<T>;
+
+		if (sliceListener) {
+			const selector = selectorOrListener as (
+				currentState: Readonly<T>
+			) => U;
+			const equality = options.equality ?? Object.is;
+			let currentSlice = selector(state);
+
+			listener = (nextState, _previousState, action) => {
+				const nextSlice = selector(nextState);
+				if (equality(currentSlice, nextSlice)) return;
+
+				const previousSlice = currentSlice;
+				currentSlice = nextSlice;
+				sliceListener(nextSlice, previousSlice, action);
+			};
+
+			if (options.fireImmediately) {
+				sliceListener(currentSlice, currentSlice, 'subscribe');
+			}
+		} else {
+			listener = selectorOrListener as StateListener<T>;
+		}
+
+		listeners.add(listener);
+		let subscribed = true;
+
+		return () => {
+			if (!subscribed) return;
+			subscribed = false;
+			listeners.delete(listener);
+		};
+	}
+
+	const select = <U>(selector: (currentState: Readonly<T>) => U): U =>
+		selector(state);
+
+	const destroy = (): void => {
+		destroyed = true;
+		listeners.clear();
+	};
+
+	return {
+		getState,
+		getInitialState,
+		setState,
+		reset,
+		subscribe,
+		select,
+		destroy,
+	};
+};
+
+export {
+	createWebStorage,
+	persistStore,
+	type PersistController,
+	type PersistOptions,
+	type StorageAdapter,
+	type WebStorageKind,
+} from './persist';

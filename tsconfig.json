@@ -3,12 +3,16 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "module": "CommonJS",
-    "target": "ES6",
+    "target": "ES2018",
     "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Node",
+    "lib": ["ES2018", "DOM"]
   },
   "include": [
     "src/**/*"
@@ -16,7 +20,6 @@
   "exclude": [
     "node_modules",
     "dist",
-    "src/**/*.test.ts",
-    "src/middlewares/*.ts"
+    "src/**/*.test.ts"
   ]
 }
