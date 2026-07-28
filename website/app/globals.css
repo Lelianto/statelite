@@ -908,6 +908,7 @@ pre {
 
 .framework-card {
   display: grid;
+  width: 100%;
   min-height: 78px;
   grid-template-columns: 38px 1fr auto;
   align-items: center;
