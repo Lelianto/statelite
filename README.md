@@ -104,22 +104,95 @@ const unsubscribe = counter.subscribe(
 );
 ```
 
-For object or array slices, pass a custom equality function:
+For object or array slices, use the built-in `shallowEqual` helper or pass a
+custom equality function:
 
 ```ts
-const shallowArrayEqual = <T>(left: T[], right: T[]) =>
-  left.length === right.length &&
-  left.every((value, index) => Object.is(value, right[index]));
+import { shallowEqual } from '@antihero/statelite';
 
 const unsubscribe = store.subscribe(
-  (state) => state.visibleIds,
-  (visibleIds) => renderRows(visibleIds),
+  (state) => ({ page: state.page, filter: state.filter }),
+  (selection) => renderRows(selection),
   {
-    equality: shallowArrayEqual,
+    equalityFn: shallowEqual,
     fireImmediately: true,
   }
 );
 ```
+
+`equality` remains supported as an alias for backward compatibility.
+
+## Middleware
+
+Middleware can inspect, transform, or block a transaction before it is committed:
+
+```ts
+import { createStatelite, type StateMiddleware } from '@antihero/statelite';
+
+const logger: StateMiddleware<{ count: number }> = (transaction, next) => {
+  console.log(transaction.action, transaction.previousState, transaction.nextState);
+  next();
+};
+
+const preventNegative: StateMiddleware<{ count: number }> = (
+  transaction,
+  next
+) => {
+  if (transaction.nextState.count >= 0) next(transaction);
+};
+
+const counter = createStatelite(
+  { count: 0 },
+  { middleware: [logger, preventNegative] }
+);
+```
+
+Middleware runs in declaration order. Calling `next()` continues the pipeline;
+not calling it blocks the update.
+
+## Async actions
+
+`createAsyncAction` provides lifecycle hooks, an `AbortSignal`, and protection
+against stale requests. A newer call aborts the previous call by default:
+
+```ts
+import { createAsyncAction } from '@antihero/statelite';
+
+const loadUser = createAsyncAction(
+  userStore,
+  async ({ signal }, userId: string) => {
+    const response = await fetch(`/api/users/${userId}`, { signal });
+    return response.json() as Promise<User>;
+  },
+  {
+    onStart: (_args, store) => store.setState({ loading: true, error: null }),
+    onSuccess: (user, _args, store) => store.setState({ user }),
+    onError: (error, _args, store) => store.setState({ error }),
+    onFinally: (_args, store) => store.setState({ loading: false }),
+  }
+);
+
+await loadUser('42');
+loadUser.abort();
+```
+
+Set `latest: false` to allow concurrent calls.
+
+## Redux DevTools
+
+Connect a store to the Redux DevTools browser extension:
+
+```ts
+import { connectDevtools } from '@antihero/statelite';
+
+const devtools = connectDevtools(counter, { name: 'Counter' });
+
+// Remove both subscriptions when the store is no longer needed.
+devtools.disconnect();
+```
+
+The bridge is SSR-safe, does nothing when the extension is unavailable, forwards
+action labels, and supports jump-to-state time travel.
 
 ## Persistence
 
@@ -143,6 +216,7 @@ const persistence = persistStore(preferences, {
   key: 'app-preferences',
   storage: createWebStorage('localStorage'),
   version: 1,
+  ttl: 1000 * 60 * 60 * 24,
   partialize: (state) => ({
     theme: state.theme,
     sidebarOpen: state.sidebarOpen,
@@ -183,6 +257,9 @@ const persistence = persistStore(store, {
   },
 });
 ```
+
+When `ttl` is set, expired state is removed during hydration and the store keeps
+its current initial state.
 
 ### Custom or asynchronous storage
 
@@ -271,7 +348,7 @@ controlled by your framework.
 
 ## API reference
 
-### `createStatelite(initialState)`
+### `createStatelite(initialState, options?)`
 
 Creates a store and returns:
 
@@ -286,6 +363,8 @@ Creates a store and returns:
 | `select(selector)` | Reads a derived value without subscribing. |
 | `destroy()` | Removes listeners and prevents future updates. |
 
+`options.middleware` accepts an ordered array of `StateMiddleware` functions.
+
 ### `setState` options
 
 | Option | Type | Default | Description |
@@ -297,7 +376,8 @@ Creates a store and returns:
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `equality` | `(a, b) => boolean` | `Object.is` | Determines whether a slice changed. |
+| `equalityFn` | `(a, b) => boolean` | `Object.is` | Determines whether a slice changed. |
+| `equality` | `(a, b) => boolean` | `Object.is` | Backward-compatible alias for `equalityFn`. |
 | `fireImmediately` | `boolean` | `false` | Runs the listener during subscription. |
 
 ### `persistStore(store, options)`
@@ -312,7 +392,16 @@ Creates a store and returns:
 | `merge` | No | Combines persisted and current state. |
 | `serialize` / `deserialize` | No | Custom payload encoding. |
 | `autoHydrate` | No | Automatically starts hydration; defaults to `true`. |
+| `ttl` | No | Number of milliseconds before persisted data expires. |
 | `onError` | No | Handles storage and serialization failures. |
+
+### Additional helpers
+
+| Helper | Description |
+| --- | --- |
+| `shallowEqual(a, b)` | Shallow equality helper for selector subscriptions. |
+| `createAsyncAction(store, handler, options?)` | Creates an abortable async action with lifecycle hooks. |
+| `connectDevtools(store, options?)` | Connects a store to Redux DevTools. |
 
 ## Migration from 1.x
 

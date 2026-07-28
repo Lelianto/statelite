@@ -18,6 +18,9 @@ export interface PersistOptions<T extends object, P = Partial<T>> {
 	serialize?: (value: unknown) => string;
 	deserialize?: (value: string) => unknown;
 	autoHydrate?: boolean;
+	/** Duration in milliseconds before persisted state expires. */
+	ttl?: number;
+	now?: () => number;
 	onError?: (error: unknown) => void;
 }
 
@@ -31,6 +34,7 @@ export interface PersistController {
 interface PersistedEnvelope {
 	state: unknown;
 	version: number;
+	expiresAt?: number;
 }
 
 const isEnvelope = (value: unknown): value is PersistedEnvelope => {
@@ -97,6 +101,12 @@ export const persistStore = <T extends object, P = Partial<T>>(
 			const envelope: PersistedEnvelope = {
 				state: partialize(store.getState()),
 				version,
+				...(options.ttl === undefined
+					? {}
+					: {
+							expiresAt:
+								(options.now ?? Date.now)() + options.ttl,
+						}),
 			};
 			await options.storage.setItem(options.key, serialize(envelope));
 		} catch (error) {
@@ -118,9 +128,16 @@ export const persistStore = <T extends object, P = Partial<T>>(
 				if (rawValue === null) return;
 
 				const decoded = deserialize(rawValue);
-				const envelope = isEnvelope(decoded)
+				const envelope: PersistedEnvelope = isEnvelope(decoded)
 					? decoded
 					: { state: decoded, version: 0 };
+				if (
+					envelope.expiresAt !== undefined &&
+					envelope.expiresAt <= (options.now ?? Date.now)()
+				) {
+					await options.storage.removeItem(options.key);
+					return;
+				}
 				let persistedState = envelope.state as P;
 
 				if (envelope.version !== version) {

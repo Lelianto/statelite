@@ -10,7 +10,24 @@ export interface SetStateOptions {
 
 export interface SubscribeOptions<U> {
 	equality?: (left: U, right: U) => boolean;
+	equalityFn?: (left: U, right: U) => boolean;
 	fireImmediately?: boolean;
+}
+
+export interface StateTransaction<T extends object> {
+	previousState: Readonly<T>;
+	nextState: Readonly<T>;
+	action?: string;
+	replace: boolean;
+}
+
+export type StateMiddleware<T extends object> = (
+	transaction: StateTransaction<T>,
+	next: (transaction?: StateTransaction<T>) => void
+) => void;
+
+export interface CreateStateliteOptions<T extends object> {
+	middleware?: readonly StateMiddleware<T>[];
 }
 
 export type StateListener<T> = (
@@ -34,8 +51,16 @@ export interface StateliteStore<T extends object> {
 	destroy(): void;
 }
 
-const shallowEqual = (left: object, right: object): boolean => {
+export const shallowEqual = <T>(left: T, right: T): boolean => {
 	if (Object.is(left, right)) return true;
+	if (
+		left === null ||
+		right === null ||
+		typeof left !== 'object' ||
+		typeof right !== 'object'
+	) {
+		return false;
+	}
 
 	const leftKeys = Object.keys(left);
 	const rightKeys = Object.keys(right);
@@ -61,7 +86,8 @@ const cloneState = <T extends object>(state: T): T => {
  * browser APIs.
  */
 export const createStatelite = <T extends object>(
-	initialState: T
+	initialState: T,
+	storeOptions: CreateStateliteOptions<T> = {}
 ): StateliteStore<T> => {
 	const initialSnapshot = cloneState(initialState);
 	let state = cloneState(initialState);
@@ -99,10 +125,49 @@ export const createStatelite = <T extends object>(
 			return;
 		}
 
-		state = nextState;
-		for (const listener of Array.from(listeners)) {
-			listener(state, previousState, resolvedOptions.action);
-		}
+		const commit = (transaction: StateTransaction<T>): void => {
+			const committedState = transaction.nextState as T;
+			if (
+				Object.is(transaction.previousState, committedState) ||
+				(!Array.isArray(committedState) &&
+					shallowEqual(transaction.previousState, committedState))
+			) {
+				return;
+			}
+
+			state = committedState;
+			for (const listener of Array.from(listeners)) {
+				listener(state, transaction.previousState, transaction.action);
+			}
+		};
+
+		const middleware = storeOptions.middleware ?? [];
+		const dispatch = (
+			index: number,
+			transaction: StateTransaction<T>
+		): void => {
+			const currentMiddleware = middleware[index];
+			if (!currentMiddleware) {
+				commit(transaction);
+				return;
+			}
+
+			let called = false;
+			currentMiddleware(transaction, (nextTransaction = transaction) => {
+				if (called) {
+					throw new Error('Statelite middleware next() called more than once.');
+				}
+				called = true;
+				dispatch(index + 1, nextTransaction);
+			});
+		};
+
+		dispatch(0, {
+			previousState,
+			nextState,
+			action: resolvedOptions.action,
+			replace: shouldReplace,
+		});
 	};
 
 	const reset = (action = 'reset'): void => {
@@ -132,7 +197,8 @@ export const createStatelite = <T extends object>(
 			const selector = selectorOrListener as (
 				currentState: Readonly<T>
 			) => U;
-			const equality = options.equality ?? Object.is;
+			const equality =
+				options.equalityFn ?? options.equality ?? Object.is;
 			let currentSlice = selector(state);
 
 			listener = (nextState, _previousState, action) => {
@@ -188,3 +254,17 @@ export {
 	type StorageAdapter,
 	type WebStorageKind,
 } from './persist';
+
+export {
+	createAsyncAction,
+	type AsyncActionContext,
+	type AsyncActionHooks,
+	type AsyncActionOptions,
+} from './async';
+
+export {
+	connectDevtools,
+	type DevtoolsConnection,
+	type DevtoolsExtension,
+	type DevtoolsOptions,
+} from './devtools';

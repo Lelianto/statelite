@@ -1,6 +1,6 @@
 {
   "name": "@antihero/statelite",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "A tiny framework-agnostic TypeScript state store with selectors and pluggable persistence.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
