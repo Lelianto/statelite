@@ -48,6 +48,89 @@ export function useCounter() {
   )
 }`;
 
+const frameworkIntegrations = [
+  {
+    name: "React",
+    integration: "useSyncExternalStore",
+    label: "useCounter.ts",
+    code: reactCode,
+  },
+  {
+    name: "Vue",
+    integration: "shallowRef + onScopeDispose",
+    label: "useCounter.ts",
+    code: `import { onScopeDispose, shallowRef } from 'vue'
+
+export function useCounter() {
+  const state = shallowRef(counter.getState())
+  const unsubscribe = counter.subscribe(next => {
+    state.value = next
+  })
+
+  onScopeDispose(unsubscribe)
+  return state
+}`,
+  },
+  {
+    name: "Svelte",
+    integration: "Readable store contract",
+    label: "counter.svelte.ts",
+    code: `export const svelteCounter = {
+  subscribe(run) {
+    run(counter.getState())
+
+    return counter.subscribe(state => {
+      run(state)
+    })
+  },
+}`,
+  },
+  {
+    name: "Angular",
+    integration: "Signal bridge",
+    label: "counter.service.ts",
+    code: `import { signal } from '@angular/core'
+
+const state = signal(counter.getState())
+
+counter.subscribe(next => {
+  state.set(next)
+})
+
+export const counterSignal = state.asReadonly()`,
+  },
+  {
+    name: "Solid",
+    integration: "Fine-grained signal bridge",
+    label: "counter.ts",
+    code: `import { createSignal, onCleanup } from 'solid-js'
+
+export function useCounter() {
+  const [state, setState] = createSignal(counter.getState())
+  const unsubscribe = counter.subscribe(setState)
+
+  onCleanup(unsubscribe)
+  return state
+}`,
+  },
+  {
+    name: "Vanilla",
+    integration: "Direct subscription",
+    label: "counter.ts",
+    code: `const output = document.querySelector('#count')
+
+counter.subscribe(state => {
+  output.textContent = String(state.count)
+})
+
+document.querySelector('#increment').onclick = () => {
+  counter.setState(state => ({
+    count: state.count + 1,
+  }))
+}`,
+  },
+];
+
 const features = [
   {
     number: "01",
@@ -82,14 +165,65 @@ const features = [
 ];
 
 const apiRows = [
-  ["getState()", "Read the current readonly state snapshot."],
-  ["getInitialState()", "Read the stable initial snapshot for SSR."],
-  ["setState(update, options?)", "Merge or replace state with an optional action label."],
-  ["reset(action?)", "Restore the original state."],
-  ["subscribe(listener)", "Listen to every effective state change."],
-  ["subscribe(selector, listener)", "Listen only when a selected slice changes."],
-  ["select(selector)", "Read a derived value without subscribing."],
-  ["destroy()", "Remove listeners and stop future updates."],
+  {
+    method: "getState()",
+    description: "Read the current readonly state snapshot.",
+    detail:
+      "Returns the latest state synchronously without creating a subscription.",
+    example: "const currentCount = counter.getState().count",
+  },
+  {
+    method: "getInitialState()",
+    description: "Read the stable initial snapshot for SSR.",
+    detail:
+      "Useful as the server snapshot passed to framework hydration APIs.",
+    example: "const serverSnapshot = counter.getInitialState()",
+  },
+  {
+    method: "setState(update, options?)",
+    description: "Merge or replace state with an optional action label.",
+    detail:
+      "Accepts a partial object or updater function. Use replace when the complete state should be swapped.",
+    example:
+      "counter.setState(s => ({ count: s.count + 1 }), { action: 'increment' })",
+  },
+  {
+    method: "reset(action?)",
+    description: "Restore the original state.",
+    detail:
+      "Resets the store to its initial snapshot and notifies subscribers only when state changes.",
+    example: "counter.reset('counter/reset')",
+  },
+  {
+    method: "subscribe(listener)",
+    description: "Listen to every effective state change.",
+    detail:
+      "The listener receives current state, previous state, and the optional action label.",
+    example:
+      "const stop = counter.subscribe((state, previous, action) => {})",
+  },
+  {
+    method: "subscribe(selector, listener)",
+    description: "Listen only when a selected slice changes.",
+    detail:
+      "Selected values use Object.is by default. Pass a custom equality function for structured slices.",
+    example:
+      "counter.subscribe(s => s.count, (count, previousCount) => {})",
+  },
+  {
+    method: "select(selector)",
+    description: "Read a derived value without subscribing.",
+    detail:
+      "Runs the selector once against the current snapshot and returns its result.",
+    example: "const doubled = counter.select(s => s.count * 2)",
+  },
+  {
+    method: "destroy()",
+    description: "Remove listeners and stop future updates.",
+    detail:
+      "Use when a store has a bounded lifecycle and should release every active subscriber.",
+    example: "counter.destroy()",
+  },
 ];
 
 function ArrowIcon() {
@@ -161,6 +295,11 @@ function SectionHeading({
 
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activeFramework, setActiveFramework] = useState("React");
+  const [expandedApi, setExpandedApi] = useState<string | null>(null);
+  const selectedFramework =
+    frameworkIntegrations.find(({ name }) => name === activeFramework) ??
+    frameworkIntegrations[0];
 
   return (
     <main>
@@ -327,9 +466,7 @@ export default function Home() {
               <article className="feature-card" key={feature.number}>
                 <div className="feature-card-top">
                   <span className="feature-number">{feature.number}</span>
-                  <span className="feature-arrow" aria-hidden="true">
-                    ↗
-                  </span>
+                  <span className="feature-status">Included</span>
                 </div>
                 <h3>{feature.title}</h3>
                 <p>{feature.copy}</p>
@@ -423,29 +560,41 @@ export default function Home() {
             copy="Statelite exposes a simple snapshot and subscription contract, so every framework can consume it naturally."
           />
           <div className="framework-showcase">
-            <div className="framework-cards">
-              {[
-                ["React", "useSyncExternalStore"],
-                ["Vue", "shallowRef + onScopeDispose"],
-                ["Svelte", "Readable store contract"],
-                ["Angular", "Signal or Observable bridge"],
-                ["Solid", "Fine-grained signal bridge"],
-                ["Vanilla", "Direct subscription"],
-              ].map(([name, integration], index) => (
-                <article
-                  className={`framework-card ${index === 0 ? "selected" : ""}`}
+            <div
+              className="framework-cards"
+              role="tablist"
+              aria-label="Framework integration examples"
+            >
+              {frameworkIntegrations.map(({ name, integration }) => (
+                <button
+                  className={`framework-card ${
+                    activeFramework === name ? "selected" : ""
+                  }`}
                   key={name}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeFramework === name}
+                  aria-controls="framework-code-panel"
+                  onClick={() => setActiveFramework(name)}
                 >
                   <span className="framework-initial">{name[0]}</span>
                   <div>
                     <h3>{name}</h3>
                     <p>{integration}</p>
                   </div>
-                  <span aria-hidden="true">→</span>
-                </article>
+                  <span className="framework-select-indicator" aria-hidden="true">
+                    {activeFramework === name ? "●" : "○"}
+                  </span>
+                </button>
               ))}
             </div>
-            <CodeWindow code={reactCode} label="useCounter.ts" compact />
+            <div id="framework-code-panel" role="tabpanel">
+              <CodeWindow
+                code={selectedFramework.code}
+                label={selectedFramework.label}
+                compact
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -467,14 +616,37 @@ export default function Home() {
               Full reference <ArrowIcon />
             </a>
           </div>
-          <div className="api-table" role="table" aria-label="Statelite API">
-            {apiRows.map(([method, description]) => (
-              <div className="api-row" role="row" key={method}>
-                <code role="cell">{method}</code>
-                <p role="cell">{description}</p>
-                <span aria-hidden="true">→</span>
-              </div>
-            ))}
+          <div className="api-table" aria-label="Statelite API">
+            {apiRows.map(({ method, description, detail, example }) => {
+              const isExpanded = expandedApi === method;
+
+              return (
+                <div className={`api-item ${isExpanded ? "expanded" : ""}`} key={method}>
+                  <button
+                    className="api-row"
+                    type="button"
+                    aria-expanded={isExpanded}
+                    aria-controls={`api-detail-${method.replace(/\W/g, "")}`}
+                    onClick={() => setExpandedApi(isExpanded ? null : method)}
+                  >
+                    <code>{method}</code>
+                    <p>{description}</p>
+                    <span className="api-toggle" aria-hidden="true">
+                      {isExpanded ? "−" : "+"}
+                    </span>
+                  </button>
+                  {isExpanded && (
+                    <div
+                      className="api-detail"
+                      id={`api-detail-${method.replace(/\W/g, "")}`}
+                    >
+                      <p>{detail}</p>
+                      <code>{example}</code>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
