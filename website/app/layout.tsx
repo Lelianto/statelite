@@ -27,6 +27,14 @@ export const metadata: Metadata = {
     description:
       "Framework-agnostic. Type-safe. Zero runtime dependencies.",
   },
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+    ],
+    shortcut: "/favicon.svg",
+    apple: "/favicon-180.png",
+  },
 };
 
 export default function RootLayout({

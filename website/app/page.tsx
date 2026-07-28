@@ -38,6 +38,50 @@ const persistence = persistStore(counter, {
 
 await persistence.rehydrate()`;
 
+const quickStartSteps = [
+  {
+    id: "install",
+    number: "1",
+    title: "Install the package",
+    copy: "Add one dependency. There are no peer dependencies.",
+    label: "Terminal",
+    code: `npm install @antihero/statelite`,
+  },
+  {
+    id: "create",
+    number: "2",
+    title: "Create your store",
+    copy: "Start with any object. Types are inferred from the initial state.",
+    label: "store.ts",
+    code: `import { createStatelite } from '@antihero/statelite'
+
+export const counter = createStatelite({
+  count: 0,
+  label: 'Counter',
+})`,
+  },
+  {
+    id: "subscribe",
+    number: "3",
+    title: "Read, update, subscribe",
+    copy: "Use the store directly or bridge it to your framework's reactive primitive.",
+    label: "counter.ts",
+    code: `const stop = counter.subscribe(
+  state => state.count,
+  (count, previousCount) => {
+    console.log(previousCount, '→', count)
+  }
+)
+
+counter.setState(
+  state => ({ count: state.count + 1 }),
+  { action: 'counter/increment' }
+)
+
+stop()`,
+  },
+];
+
 const reactCode = `import { useSyncExternalStore } from 'react'
 
 export function useCounter() {
@@ -295,21 +339,24 @@ function SectionHeading({
 
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activeStep, setActiveStep] = useState("install");
   const [activeFramework, setActiveFramework] = useState("React");
   const [expandedApi, setExpandedApi] = useState<string | null>(null);
   const selectedFramework =
     frameworkIntegrations.find(({ name }) => name === activeFramework) ??
     frameworkIntegrations[0];
+  const selectedStep =
+    quickStartSteps.find(({ id }) => id === activeStep) ?? quickStartSteps[0];
 
   return (
     <main>
       <header className="site-header">
         <div className="nav-shell">
           <a className="brand" href="#top" aria-label="Statelite home">
-            <span className="brand-mark" aria-hidden="true">
-              S
+            <span className="wordmark" aria-hidden="true">
+              <span className="wordmark-state">state</span>
+              <span className="wordmark-lite">lite</span>
             </span>
-            <span>Statelite</span>
             <span className="version">v2.0</span>
           </a>
 
@@ -485,37 +532,39 @@ export default function Home() {
           />
 
           <div className="steps-layout">
-            <div className="steps">
-              <article className="step active">
-                <span>1</span>
-                <div>
-                  <h3>Install the package</h3>
-                  <p>Add one dependency. There are no peer dependencies.</p>
-                  <CopyInstall />
-                </div>
-              </article>
-              <article className="step">
-                <span>2</span>
-                <div>
-                  <h3>Create your store</h3>
-                  <p>
-                    Start with any object. Types are inferred from the initial
-                    state.
-                  </p>
-                </div>
-              </article>
-              <article className="step">
-                <span>3</span>
-                <div>
-                  <h3>Read, update, subscribe</h3>
-                  <p>
-                    Use the store directly or bridge it to your framework&apos;s
-                    reactive primitive.
-                  </p>
-                </div>
-              </article>
+            <div
+              className="steps"
+              role="tablist"
+              aria-label="Quick start steps"
+            >
+              {quickStartSteps.map((step) => (
+                <button
+                  className={`step ${activeStep === step.id ? "active" : ""}`}
+                  key={step.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeStep === step.id}
+                  aria-controls="quick-start-code"
+                  onClick={() => setActiveStep(step.id)}
+                >
+                  <span>{step.number}</span>
+                  <div>
+                    <h3>{step.title}</h3>
+                    <p>{step.copy}</p>
+                    {step.id === "install" && (
+                      <code className="step-command">{installCommand}</code>
+                    )}
+                  </div>
+                </button>
+              ))}
             </div>
-            <CodeWindow code={coreCode} label="store.ts" compact />
+            <div id="quick-start-code" role="tabpanel">
+              <CodeWindow
+                code={selectedStep.code}
+                label={selectedStep.label}
+                compact
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -680,10 +729,10 @@ export default function Home() {
         <div className="container footer-grid">
           <div>
             <a className="brand footer-brand" href="#top">
-              <span className="brand-mark" aria-hidden="true">
-                S
+              <span className="wordmark" aria-hidden="true">
+                <span className="wordmark-state">state</span>
+                <span className="wordmark-lite">lite</span>
               </span>
-              <span>Statelite</span>
             </a>
             <p>
               A tiny framework-agnostic TypeScript state store by Lelianto.
